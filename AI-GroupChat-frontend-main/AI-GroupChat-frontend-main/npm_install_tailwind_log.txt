@@ -1,0 +1,98 @@
+npm verbose cli /opt/homebrew/Cellar/node/23.11.0/bin/node /opt/homebrew/bin/npm
+npm info using npm@10.9.2
+npm info using node@v23.11.0
+npm verbose title npm install tailwindcss
+npm verbose argv "install" "--save-dev" "tailwindcss" "--loglevel" "verbose"
+npm verbose logfile logs-max:10 dir:/Users/nitishkapoor/.npm/_logs/2025-06-21T20_19_54_453Z-
+npm verbose logfile /Users/nitishkapoor/.npm/_logs/2025-06-21T20_19_54_453Z-debug-0.log
+npm verbose shrinkwrap failed to load node_modules/.package-lock.json out of date, updated: node_modules
+npm http fetch GET 200 https://registry.npmjs.org/tailwindcss 242ms (cache revalidated)
+npm http cache https://registry.npmjs.org/picomatch 3ms (cache hit)
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-wasm32-wasi
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-win32-x64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-win32-arm64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-linux-x64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-linux-x64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-linux-arm64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-linux-arm64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-linux-arm-gnueabihf
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-freebsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/lightningcss-darwin-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-win32-x64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-win32-arm64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-linux-x64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-linux-arm64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-linux-arm64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-linux-arm-gnueabihf
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-freebsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-darwin-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@tailwindcss/oxide-android-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-win32-x64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-win32-ia32-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-win32-arm64-msvc
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-x64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-x64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-s390x-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-riscv64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-riscv64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-powerpc64le-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-loongarch64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-arm64-musl
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-arm64-gnu
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-arm-musleabihf
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-linux-arm-gnueabihf
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-freebsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-freebsd-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-darwin-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-android-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@rollup/rollup-android-arm-eabi
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/win32-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/win32-ia32
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/win32-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/sunos-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/openbsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/openbsd-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/netbsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/netbsd-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-s390x
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-riscv64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-ppc64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-mips64el
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-loong64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-ia32
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/linux-arm
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/freebsd-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/freebsd-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/darwin-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/android-x64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/android-arm64
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/android-arm
+npm verbose reify failed optional dependency /Users/nitishkapoor/Documents/ai gc/frontend/node_modules/@esbuild/aix-ppc64
+npm http cache fsevents@https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz 0ms (cache hit)
+npm http cache picomatch@https://registry.npmjs.org/picomatch/-/picomatch-4.0.2.tgz 0ms (cache hit)
+npm http cache picomatch@https://registry.npmjs.org/picomatch/-/picomatch-2.3.1.tgz 0ms (cache hit)
+npm http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 356ms
+npm http cache https://registry.npmjs.org/cookie 6ms (cache hit)
+npm http cache https://registry.npmjs.org/@sveltejs%2fkit 5ms (cache hit)
+npm http cache https://registry.npmjs.org/@sveltejs%2fadapter-auto 15ms (cache hit)
+
+added 2 packages, removed 2 packages, changed 1 package, and audited 228 packages in 940ms
+
+62 packages are looking for funding
+  run `npm fund` for details
+
+3 low severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm verbose cwd /Users/nitishkapoor/Documents/ai gc/frontend
+npm verbose os Darwin 24.3.0
+npm verbose node v23.11.0
+npm verbose npm  v10.9.2
+npm verbose exit 0
+npm info ok
