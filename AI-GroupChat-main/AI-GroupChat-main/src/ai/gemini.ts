@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 dotenv.config(); // Ensure environment variables are loaded
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL_NAME = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest"; // Or "gemini-pro" etc.
+const GEMINI_MODEL_NAME = process.env.GEMINI_MODEL || "gemini-flash-latest"; // Or "gemini-pro" etc.
 
 let genAI: GoogleGenerativeAI | null = null;
 if (GEMINI_API_KEY) {
