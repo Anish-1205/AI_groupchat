@@ -20,13 +20,14 @@
 
 	// `name` must match the persona name in the backend's ALL_PERSONAS (it's the message speaker).
 	const availablePersonas = [
-		{ id: 'stoic', name: 'Zeno', title: 'Calm', tradition: 'Stoic', mono: 'ZE', color: '#60a5fa', defaultChecked: true },
-		{ id: 'existentialist', name: 'Simone', title: 'Free Spirit', tradition: 'Existentialist', mono: 'SM', color: '#fb923c', defaultChecked: true },
-		{ id: 'buddhist', name: 'Ananda', title: 'Mindful', tradition: 'Buddhist', mono: 'AN', color: '#facc15', defaultChecked: true },
-		{ id: 'pragmatist', name: 'Dewey', title: 'Practical', tradition: 'Pragmatist', mono: 'DW', color: '#2dd4bf', defaultChecked: false },
-		{ id: 'rationalist', name: 'Baruch', title: 'Rational', tradition: 'Rationalist', mono: 'BA', color: '#a5b4fc', defaultChecked: false },
-		{ id: 'absurdist', name: 'Sisyphus', title: 'Rebel', tradition: 'Absurdist', mono: 'SY', color: '#fb7185', defaultChecked: false },
-		{ id: 'moderator', name: 'Arbiter', title: 'Neutral', tradition: 'Moderator', mono: 'AR', color: '#a1a1aa', defaultChecked: true }
+		// `id` doubles as the emblem name in Icon.svelte.
+		{ id: 'stoic', name: 'Zeno', title: 'Calm', tradition: 'Stoic', motto: 'Control what you can. Accept the rest.', color: '#60a5fa', defaultChecked: true },
+		{ id: 'existentialist', name: 'Simone', title: 'Free Spirit', tradition: 'Existentialist', motto: 'You are nothing but your choices.', color: '#fb923c', defaultChecked: true },
+		{ id: 'buddhist', name: 'Ananda', title: 'Mindful', tradition: 'Buddhist', motto: 'Loosen the grip, and see clearly.', color: '#facc15', defaultChecked: true },
+		{ id: 'pragmatist', name: 'Dewey', title: 'Practical', tradition: 'Pragmatist', motto: 'Fine theory. Does it work?', color: '#2dd4bf', defaultChecked: false },
+		{ id: 'rationalist', name: 'Baruch', title: 'Rational', tradition: 'Rationalist', motto: 'Define your terms. Then prove it.', color: '#a5b4fc', defaultChecked: false },
+		{ id: 'absurdist', name: 'Sisyphus', title: 'Rebel', tradition: 'Absurdist', motto: 'No meaning? Push the boulder anyway.', color: '#fb7185', defaultChecked: false },
+		{ id: 'moderator', name: 'Arbiter', title: 'Neutral', tradition: 'Moderator', motto: 'Weigh every side. Then decide.', color: '#a1a1aa', defaultChecked: true }
 	];
 	type Persona = (typeof availablePersonas)[number];
 	const personaByName: Record<string, Persona> = Object.fromEntries(availablePersonas.map((p) => [p.name, p]));
@@ -51,7 +52,7 @@
 		{ title: 'Get the verdict', text: 'The moderator closes with a structured, balanced verdict.' }
 	];
 
-	const stack = ['SvelteKit', 'TypeScript', 'Hono', 'Node.js', 'WebSockets', 'Mistral AI', 'Google Gemini', 'Render'];
+	const stack = ['SvelteKit', 'TypeScript', 'Hono', 'Node.js', 'WebSockets', 'Groq', 'Mistral AI', 'Google Gemini', 'Render'];
 
 	const phases = ['Opening rounds', 'Open floor', 'Verdict'];
 
@@ -299,14 +300,22 @@
 				</div>
 				<div class="agent-grid">
 					{#each availablePersonas as p (p.id)}
-						<label class="agent-option" class:selected={selectedPersonaIds.includes(p.id)} on:mousemove={spotlight}>
+						<label
+							class="agent-option"
+							class:selected={selectedPersonaIds.includes(p.id)}
+							style="--c:{p.color}"
+							on:mousemove={spotlight}
+						>
 							<input type="checkbox" bind:group={selectedPersonaIds} value={p.id} />
-							<span class="avatar" style="--c:{p.color}">{p.mono}</span>
-							<span class="agent-text">
-								<span class="agent-name">{p.name} <span class="muted">({p.title})</span></span>
-								<span class="agent-school">{p.tradition}</span>
+							<span class="agent-head">
+								<span class="avatar lg"><Icon name={p.id} size={22} /></span>
+								<span class="agent-text">
+									<span class="agent-school">{p.tradition}</span>
+									<span class="agent-name">{p.name} <span class="muted">({p.title})</span></span>
+								</span>
+								<span class="check"><Icon name="check" size={12} /></span>
 							</span>
-							<span class="check"><Icon name="check" size={14} /></span>
+							<span class="motto">“{p.motto}”</span>
 						</label>
 					{/each}
 				</div>
@@ -340,7 +349,7 @@
 
 		<section class="section">
 			<p class="eyebrow">Architecture</p>
-			<div class="arch" role="img" aria-label="Browser connects over WebSocket to a Hono orchestrator, which routes each agent to Mistral or Gemini">
+			<div class="arch" role="img" aria-label="Browser connects over WebSocket to a Hono orchestrator, which routes each agent to Groq, Mistral or Gemini">
 				<div class="node">
 					<span class="node-k">Client</span>
 					<span>SvelteKit UI</span>
@@ -352,6 +361,7 @@
 				</div>
 				<div class="edge"><span class="edge-label">per-agent routing</span><span class="pulse"></span></div>
 				<div class="node-stack">
+					<div class="node"><span class="node-k">Model</span><span>Groq · Llama</span></div>
 					<div class="node"><span class="node-k">Model</span><span>Mistral</span></div>
 					<div class="node"><span class="node-k">Model</span><span>Gemini</span></div>
 				</div>
@@ -393,7 +403,7 @@
 					<ul class="panel-list">
 						{#each panel as p (p.id)}
 							<li class:is-speaking={thinkingSpeakers.has(p.name)}>
-								<span class="avatar sm" style="--c:{p.color}">{p.mono}</span>
+								<span class="avatar sm" style="--c:{p.color}" title={p.motto}><Icon name={p.id} size={15} /></span>
 								<span class="agent-text">
 									<span class="agent-name">{p.name} <span class="muted">({p.title})</span></span>
 									<span class="agent-school">{p.tradition}</span>
@@ -443,7 +453,7 @@
 						{:else}
 							{@const p = personaByName[m.speaker]}
 							<article class="msg" class:from-user={m.speaker === 'User'} in:fly={{ y: 8, duration: motion }}>
-								<span class="avatar" style="--c:{p?.color ?? '#e4e4e7'}">{p?.mono ?? 'YOU'}</span>
+								<span class="avatar" style="--c:{p?.color ?? '#e4e4e7'}"><Icon name={p?.id ?? 'user-round'} size={17} /></span>
 								<div class="msg-body">
 									<header>
 										<span class="msg-name">{p ? p.name : 'You'}</span>
@@ -460,7 +470,7 @@
 					{#each Array.from(thinkingSpeakers) as s (s)}
 						{@const p = thinkingPersona(s)}
 						<article class="msg pending" in:fly={{ y: 8, duration: motion }}>
-							<span class="avatar" style="--c:{p.color}">{p.mono}</span>
+							<span class="avatar thinking" style="--c:{p.color}"><Icon name={p.id} size={17} /></span>
 							<div class="msg-body">
 								<header>
 									<span class="msg-name">{p.name}</span>
@@ -760,14 +770,23 @@
 	.agent-option, .step-card { position: relative; overflow: hidden; }
 	.agent-option {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 10px;
-		padding: 10px;
+		padding: 12px;
 		border: 1px solid var(--border);
-		border-radius: 8px;
+		border-radius: 10px;
 		cursor: pointer;
-		transition: border-color 0.15s, background 0.15s, transform 0.15s var(--ease);
+		transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.15s var(--ease);
 	}
+	.agent-head { display: flex; align-items: center; gap: 10px; }
+	.motto {
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--text-3);
+		font-style: italic;
+		transition: color 0.2s;
+	}
+	.agent-option.selected .motto { color: var(--text-2); }
 	/* Cursor spotlight */
 	.agent-option::after, .step-card::after {
 		content: '';
@@ -781,31 +800,57 @@
 	.agent-option:hover::after, .step-card:hover::after { opacity: 1; }
 	.agent-option:hover { border-color: var(--border-strong); }
 	.agent-option:active { transform: scale(0.985); }
-	.agent-option.selected { border-color: var(--border-strong); background: var(--surface-2); }
+	.agent-option.selected {
+		border-color: color-mix(in srgb, var(--c) 45%, var(--border));
+		background: linear-gradient(160deg, color-mix(in srgb, var(--c) 9%, var(--surface-2)), var(--surface-2) 60%);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 12%, transparent), 0 8px 24px -14px var(--c);
+	}
 	.agent-option input { position: absolute; opacity: 0; pointer-events: none; }
 	.agent-option:has(input:focus-visible) { outline: 2px solid var(--text-2); outline-offset: 2px; }
-	.check { margin-left: auto; color: var(--text); opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.2s var(--ease); }
-	.agent-option.selected .check { opacity: 1; transform: none; }
-
-	.avatar {
-		flex-shrink: 0;
-		width: 32px;
-		height: 32px;
-		border-radius: 8px;
+	.check {
+		align-self: flex-start;
+		margin-left: auto;
 		display: grid;
 		place-items: center;
-		font-size: 11px;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		color: var(--c);
-		background: color-mix(in srgb, var(--c) 12%, transparent);
-		border: 1px solid color-mix(in srgb, var(--c) 28%, transparent);
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		border: 1px solid var(--border-strong);
+		color: transparent;
+		transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s var(--ease);
 	}
-	.avatar.sm { width: 28px; height: 28px; font-size: 10px; }
+	.agent-option.selected .check { background: var(--c); border-color: var(--c); color: #09090b; transform: scale(1.05); }
+
+	/* Persona emblem tile: tinted glass with the persona's colour glowing from the top-left */
+	.avatar {
+		flex-shrink: 0;
+		width: 34px;
+		height: 34px;
+		border-radius: 10px;
+		display: grid;
+		place-items: center;
+		color: var(--c);
+		background:
+			radial-gradient(circle at 28% 22%, color-mix(in srgb, var(--c) 38%, transparent), transparent 70%),
+			color-mix(in srgb, var(--c) 8%, #0c0c0e);
+		border: 1px solid color-mix(in srgb, var(--c) 32%, transparent);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 14px -6px color-mix(in srgb, var(--c) 70%, transparent);
+	}
+	.avatar.lg { width: 42px; height: 42px; border-radius: 12px; transition: transform 0.25s var(--ease); }
+	.agent-option:hover .avatar.lg { transform: rotate(-4deg) scale(1.05); }
+	.avatar.sm { width: 30px; height: 30px; border-radius: 9px; }
+	.avatar.thinking, .is-speaking .avatar { animation: glow 1.6s ease-in-out infinite; }
 	.agent-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
 	.agent-name { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
-	.agent-name .muted { font-weight: 400; }
+	.agent-name .muted { font-weight: 400; white-space: nowrap; }
 	.agent-school { font-size: 12px; color: var(--text-3); }
+	.agent-option .agent-school {
+		font-size: 10.5px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: color-mix(in srgb, var(--c) 75%, var(--text-2));
+	}
 
 	/* Buttons */
 	.btn {
@@ -1011,7 +1056,6 @@
 	.msg-body header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
 	.msg-name { font-weight: 600; font-size: 13px; }
 	.msg-body time { margin-left: auto; color: var(--text-3); }
-	.msg.from-user .avatar { font-size: 9px; }
 	.msg.from-user .msg-body .prose { color: var(--text); }
 	.tag { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--border-strong); color: var(--text-2); }
 	.sys { margin: 10px 0; text-align: center; font-size: 12px; color: var(--text-3); }
@@ -1076,11 +1120,13 @@
 	@keyframes spin { to { --angle: 360deg; } }
 	@keyframes ping { 75%, 100% { transform: scale(2.6); opacity: 0; } }
 	@keyframes fade { 50% { opacity: 0.45; } }
+	@keyframes glow { 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), 0 0 18px -2px var(--c); } }
 	@keyframes shimmer { to { background-position: -200% 0; } }
 	@keyframes travel { from { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { left: calc(100% - 28px); opacity: 0; } }
 
 	@media (prefers-reduced-motion: reduce) {
-		.reveal, .beam::before, .status.live .dot::after, .speaking, .skeleton span, .pulse { animation: none; }
+		.reveal, .beam::before, .status.live .dot::after, .speaking, .skeleton span, .pulse, .avatar { animation: none !important; }
+		.agent-option:hover .avatar.lg { transform: none; }
 		.shine::after { display: none; }
 	}
 

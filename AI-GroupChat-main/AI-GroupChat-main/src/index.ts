@@ -7,6 +7,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 
 import { fetchMistral } from './ai/mistral';
 import { fetchGemini } from './ai/gemini';
+import { fetchGroq } from './ai/groq';
 
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -24,12 +25,15 @@ const MAX_DEBATE_ROUNDS_PER_PARTICIPANT = 2;
 const MODERATOR_TURN_INTERVAL = 2;
 const AI_MISTRAL_ID = 'mistral';
 const AI_GEMINI_ID = 'gemini';
+const AI_GROQ_ID = 'groq';
 const MODERATOR_PERSONA_ID = 'moderator';
+
+type ModelId = typeof AI_MISTRAL_ID | typeof AI_GEMINI_ID | typeof AI_GROQ_ID;
 
 interface Persona {
   id: string;
   name: string;
-  model: typeof AI_MISTRAL_ID | typeof AI_GEMINI_ID;
+  model: ModelId;
   instructions: string;
   expertise?: string;
 }
@@ -62,7 +66,7 @@ const STYLE_RULE = 'Stay in character, engage directly with what others said (ag
 
 // Philosopher personas. Names are single words so users can @mention them.
 const ALL_PERSONAS: Record<string, Persona> = {
-  stoic: { id: 'stoic', name: 'Zeno', model: AI_MISTRAL_ID, expertise: 'Stoicism (Zeno, Epictetus, Seneca)',
+  stoic: { id: 'stoic', name: 'Zeno', model: AI_GROQ_ID, expertise: 'Stoicism (Zeno, Epictetus, Seneca)',
     instructions: `You are Zeno, a Stoic philosopher. Core beliefs: virtue is the only true good; only our judgments and responses are in our control; live according to nature and reason; hardship and death are natural. Style: calm, measured, logical; use the dichotomy of control; challenge anyone who places value in externals. ${STYLE_RULE}` },
   existentialist: { id: 'existentialist', name: 'Simone', model: AI_GEMINI_ID, expertise: 'Existentialism (de Beauvoir, Sartre, Kierkegaard)',
     instructions: `You are Simone, an Existentialist philosopher. Core beliefs: existence precedes essence; we are condemned to be free; authenticity means facing anxiety and choosing; bad faith is self-deception; life has no given meaning, we create it. Style: passionate, provocative; challenge fixed ideas of human nature; push others to own their freedom. ${STYLE_RULE}` },
@@ -72,9 +76,9 @@ const ALL_PERSONAS: Record<string, Persona> = {
     instructions: `You are Dewey, a Pragmatist philosopher. Core beliefs: truth is what works; ideas are tools judged by consequences; experience comes before theory; approach problems experimentally; pluralism. Style: down-to-earth and direct; keep asking "what difference does it make in practice?"; skeptical of purely abstract arguments. ${STYLE_RULE}` },
   rationalist: { id: 'rationalist', name: 'Baruch', model: AI_MISTRAL_ID, expertise: 'Rationalism (Spinoza, Descartes, Leibniz)',
     instructions: `You are Baruch, a Rationalist philosopher. Core beliefs: reason is the primary source of knowledge; some truths are known a priori; clear and distinct ideas ground certainty; the universe follows rational, discoverable principles. Style: rigorous, systematic; build from first principles; demand clear definitions and logical consistency. ${STYLE_RULE}` },
-  absurdist: { id: 'absurdist', name: 'Sisyphus', model: AI_GEMINI_ID, expertise: 'Absurdism (Camus)',
+  absurdist: { id: 'absurdist', name: 'Sisyphus', model: AI_GROQ_ID, expertise: 'Absurdism (Camus)',
     instructions: `You are Sisyphus, an Absurdist philosopher who has made peace with the boulder. Core beliefs: the absurd is the clash between our hunger for meaning and the universe's silence; reject both despair and the leap of faith; imagine Sisyphus happy; respond with revolt, freedom and passion. Style: ironic yet earnest; vivid metaphors; dark humor; challenge both nihilism and false hope. ${STYLE_RULE}` },
-  [MODERATOR_PERSONA_ID]: { id: MODERATOR_PERSONA_ID, name: 'Arbiter', model: AI_MISTRAL_ID,
+  [MODERATOR_PERSONA_ID]: { id: MODERATOR_PERSONA_ID, name: 'Arbiter', model: AI_GROQ_ID,
     instructions: 'You are the Arbiter, the neutral host of a philosophical debate. You do not take sides. You keep the discussion focused on the question, point out where speakers talk past each other, name emerging agreements and tensions, and pose one sharp follow-up question to a specific speaker. Keep it under 100 words.' }
 };
 const DEFAULT_PERSONA_IDS = ['stoic', 'existentialist', 'buddhist', MODERATOR_PERSONA_ID];
@@ -102,12 +106,33 @@ function takeCallBudget(ws: WebSocket): void {
   dayCalls++;
 }
 
-// Single entry point for LLM calls: enforces the rate limit and falls back to Gemini when no Mistral key is set.
-async function callModel(ws: WebSocket, model: string, prompt: string): Promise<string> {
-  takeCallBudget(ws);
-  if (model === AI_MISTRAL_ID && process.env.MISTRAL_API_KEY) return fetchMistral(prompt);
-  return fetchGemini(prompt);
+const PROVIDERS: Record<ModelId, { envKey: string; call: (prompt: string) => Promise<string> }> = {
+  [AI_GROQ_ID]: { envKey: 'GROQ_API_KEY', call: fetchGroq },
+  [AI_GEMINI_ID]: { envKey: 'GEMINI_API_KEY', call: fetchGemini },
+  [AI_MISTRAL_ID]: { envKey: 'MISTRAL_API_KEY', call: fetchMistral },
+};
+
+// Preferred provider first, then the other configured ones (Groq > Gemini > Mistral) as fallbacks.
+function providerOrder(model: ModelId): ModelId[] {
+  const configured = (Object.keys(PROVIDERS) as ModelId[]).filter(id => process.env[PROVIDERS[id].envKey]);
+  return configured.includes(model) ? [model, ...configured.filter(id => id !== model)] : configured;
 }
+
+// Single entry point for LLM calls: enforces the rate limit, routes to the persona's provider,
+// and retries once on the next configured provider if that call throws (e.g. Groq 429).
+async function callModel(ws: WebSocket, model: ModelId, prompt: string): Promise<string> {
+  takeCallBudget(ws);
+  const [first, second] = providerOrder(model);
+  if (!first) return fetchGemini(prompt); // nothing configured: surfaces Gemini's "key missing" message
+  try {
+    return await PROVIDERS[first].call(prompt);
+  } catch (e: any) {
+    if (!second) throw e;
+    console.warn(`[callModel] ${first} failed (${e.message}); falling back to ${second}.`);
+    return PROVIDERS[second].call(prompt);
+  }
+}
+console.log(`LLM providers configured: ${(Object.keys(PROVIDERS) as ModelId[]).filter(id => process.env[PROVIDERS[id].envKey]).join(', ') || 'none'}`);
 const activeDebates = new Map<WebSocket, Debate>();
 
 wss.on('connection', (ws, req) => {
@@ -599,7 +624,7 @@ Your balanced answer to the question, drawing on every perspective and any point
 What remains open.`;
 
   try {
-    const summary = await callModel(ws, AI_MISTRAL_ID, summaryPrompt);
+    const summary = await callModel(ws, AI_GROQ_ID, summaryPrompt);
     broadcastMessage(ws, createChatMessage('Verdict', summary));
   } catch (error: any) {
     sendSystemMessage(ws, debate.id, `Error generating summary: ${error.message}`);
