@@ -37,8 +37,9 @@ const safetySettings = [
 ];
 
 export async function fetchGemini(prompt: string): Promise<string> {
+    // Failures throw (never return error text) so callModel can fall back to another provider.
     if (!genAI) {
-        return "Error: Gemini API not initialized (API key likely missing).";
+        throw new Error("Gemini API not initialized (API key likely missing).");
     }
 
     try {
@@ -116,8 +117,9 @@ export async function fetchGemini(prompt: string): Promise<string> {
     } catch (error: any) {
         console.error("Error calling Gemini API:", error);
         if (error.message && error.message.includes("SAFETY")) {
-             return "Error: Gemini API blocked the response due to safety settings. The prompt or generated content may have violated policies.";
+            throw new Error("Gemini blocked the response due to safety settings.");
         }
-        return `Exception during Gemini API call: ${error.message}`;
+        const status = String(error?.message).match(/\[(\d{3})[^\]]*\]/)?.[1];
+        throw new Error(`Gemini request failed${status ? ` (${status})` : ''}.`);
     }
 }

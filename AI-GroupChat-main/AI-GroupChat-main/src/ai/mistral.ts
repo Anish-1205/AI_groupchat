@@ -37,9 +37,9 @@ interface MistralAPIResponse {
 
 
 export async function fetchMistral(prompt: string): Promise<string> {
+    // Failures throw (never return error text) so callModel can fall back to another provider.
     if (!MISTRAL_API_KEY) {
-        console.error("MISTRAL_API_KEY is not set.");
-        return "Error: Mistral API key not configured.";
+        throw new Error("Mistral API key not configured.");
     }
 
     // Mistral's chat API expects a messages array. We'll treat the whole prompt as a user message.
@@ -90,7 +90,7 @@ export async function fetchMistral(prompt: string): Promise<string> {
         if (!response.ok) {
             const errorBody = await response.text();
             console.error(`Mistral API Error: ${response.status} ${response.statusText}`, errorBody);
-            return `Error fetching response from Mistral: ${response.statusText}. Details: ${errorBody.substring(0,100)}`;
+            throw new Error(`Mistral request failed (${response.status}).`);
         }
 
         const data = await response.json() as MistralAPIResponse;
@@ -100,10 +100,10 @@ export async function fetchMistral(prompt: string): Promise<string> {
             return data.choices[0].message.content.trim();
         } else {
             console.error("Mistral API Error: No valid response choices found.", data);
-            return "Error: Mistral returned an empty or invalid response.";
+            throw new Error("Mistral returned an empty response.");
         }
     } catch (error: any) {
         console.error("Error calling Mistral API:", error);
-        return `Exception during Mistral API call: ${error.message}`;
+        throw error;
     }
 }

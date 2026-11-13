@@ -45,6 +45,7 @@ interface ChatMessage {
   timestamp: string;
   isThinking?: boolean;
   isRegenerated?: boolean;
+  model?: ModelId; // provider that actually produced this message (after any fallback)
 }
 
 interface Debate {
@@ -60,6 +61,7 @@ interface Debate {
   isSummarizing: boolean;
   isPausedForUserInteraction: boolean;
   automatedPhaseComplete: boolean;
+  verdictModel: ModelId;
 }
 
 const STYLE_RULE = 'Stay in character, engage directly with what others said (agree, challenge, or build on it), and keep responses under 150 words.';
@@ -112,27 +114,36 @@ const PROVIDERS: Record<ModelId, { envKey: string; call: (prompt: string) => Pro
   [AI_MISTRAL_ID]: { envKey: 'MISTRAL_API_KEY', call: fetchMistral },
 };
 
+const DEFAULT_VERDICT_MODEL: ModelId = AI_GROQ_ID;
+
+const configuredProviders = () => (Object.keys(PROVIDERS) as ModelId[]).filter(id => process.env[PROVIDERS[id].envKey]);
+
 // Preferred provider first, then the other configured ones (Groq > Gemini > Mistral) as fallbacks.
 function providerOrder(model: ModelId): ModelId[] {
-  const configured = (Object.keys(PROVIDERS) as ModelId[]).filter(id => process.env[PROVIDERS[id].envKey]);
+  const configured = configuredProviders();
   return configured.includes(model) ? [model, ...configured.filter(id => id !== model)] : configured;
 }
 
 // Single entry point for LLM calls: enforces the rate limit, routes to the persona's provider,
-// and retries once on the next configured provider if that call throws (e.g. Groq 429).
-async function callModel(ws: WebSocket, model: ModelId, prompt: string): Promise<string> {
+// and if that call throws (e.g. Gemini 503, Groq 429) tries each other configured provider in turn.
+// Providers must throw on failure, never return error text, or the fallback is skipped.
+// Returns which provider actually answered so the UI can show it.
+async function callModel(ws: WebSocket, model: ModelId, prompt: string): Promise<{ text: string; provider: ModelId }> {
   takeCallBudget(ws);
-  const [first, second] = providerOrder(model);
-  if (!first) return fetchGemini(prompt); // nothing configured: surfaces Gemini's "key missing" message
-  try {
-    return await PROVIDERS[first].call(prompt);
-  } catch (e: any) {
-    if (!second) throw e;
-    console.warn(`[callModel] ${first} failed (${e.message}); falling back to ${second}.`);
-    return PROVIDERS[second].call(prompt);
+  const order = providerOrder(model);
+  if (order.length === 0) throw new Error('No AI provider is configured on the server.');
+  let lastError: unknown;
+  for (const provider of order) {
+    try {
+      return { text: await PROVIDERS[provider].call(prompt), provider };
+    } catch (e: any) {
+      lastError = e;
+      console.warn(`[callModel] ${provider} failed (${e?.message}); ${provider === order[order.length - 1] ? 'no providers left' : 'trying next provider'}.`);
+    }
   }
+  throw lastError;
 }
-console.log(`LLM providers configured: ${(Object.keys(PROVIDERS) as ModelId[]).filter(id => process.env[PROVIDERS[id].envKey]).join(', ') || 'none'}`);
+console.log(`LLM providers configured: ${configuredProviders().join(', ') || 'none'}`);
 const activeDebates = new Map<WebSocket, Debate>();
 
 wss.on('connection', (ws, req) => {
@@ -174,7 +185,7 @@ wss.on('connection', (ws, req) => {
           const personaIds = Array.isArray(payload.persona_ids) && payload.persona_ids.every((id: any) => typeof id === 'string')
             ? payload.persona_ids
             : DEFAULT_PERSONA_IDS;
-          await startDebate(ws, debate, payload.topic, personaIds);
+          await startDebate(ws, debate, payload.topic, personaIds, sanitizeModelOverrides(payload.models));
         } else {
           sendSystemMessage(ws, debate.id, 'Error: "topic" (string) required.');
         }
@@ -234,6 +245,12 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => { /* ... */ });
+  // Routing info for the client's settings panel. Only provider names are sent, never keys.
+  ws.send(JSON.stringify({
+    type: 'config',
+    providers: configuredProviders(),
+    defaults: { ...Object.fromEntries(Object.values(ALL_PERSONAS).map(p => [p.id, p.model])), verdict: DEFAULT_VERDICT_MODEL },
+  }));
   sendSystemMessage(ws, 'initial_connection', 'Welcome! ...');
 });
 
@@ -244,18 +261,33 @@ function createNewDebateState(): Debate {
     moderator: ALL_PERSONAS[MODERATOR_PERSONA_ID] ? { ...ALL_PERSONAS[MODERATOR_PERSONA_ID] } : undefined,
     currentTurnParticipantIndex: 0, participantTurnsThisCycle: 0, currentRound: 0,
     isActive: false, isSummarizing: false, isPausedForUserInteraction: false, automatedPhaseComplete: false,
+    verdictModel: DEFAULT_VERDICT_MODEL,
   };
 }
 
-async function startDebate(ws: WebSocket, debate: Debate, topic: string, personaIds: string[]) {
+// Client-chosen model per persona (and 'verdict'). Untrusted input: keep only known keys and known providers.
+type ModelOverrides = Partial<Record<string, ModelId>>;
+function sanitizeModelOverrides(raw: unknown): ModelOverrides {
+  const out: ModelOverrides = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, value] of Object.entries(raw)) {
+    const knownKey = key === 'verdict' || Object.hasOwn(ALL_PERSONAS, key);
+    if (knownKey && typeof value === 'string' && Object.hasOwn(PROVIDERS, value)) out[key] = value as ModelId;
+  }
+  return out;
+}
+
+async function startDebate(ws: WebSocket, debate: Debate, topic: string, personaIds: string[], models: ModelOverrides = {}) {
+  const withModel = (p: Persona): Persona => ({ ...p, model: models[p.id] ?? p.model });
   const newParticipants = personaIds.filter(id => id !== MODERATOR_PERSONA_ID)
-                                   .map(id => ALL_PERSONAS[id]).filter(Boolean) as Persona[];
+                                   .map(id => ALL_PERSONAS[id]).filter(Boolean).map(withModel);
   const moderatorSelected = personaIds.includes(MODERATOR_PERSONA_ID);
   const existingDebateId = debate.id;
 
   Object.assign(debate, {
       ...createNewDebateState(), id: existingDebateId, topic: topic, participants: newParticipants,
-      moderator: moderatorSelected && ALL_PERSONAS[MODERATOR_PERSONA_ID] ? { ...ALL_PERSONAS[MODERATOR_PERSONA_ID] } : undefined,
+      moderator: moderatorSelected && ALL_PERSONAS[MODERATOR_PERSONA_ID] ? withModel(ALL_PERSONAS[MODERATOR_PERSONA_ID]) : undefined,
+      verdictModel: models.verdict ?? DEFAULT_VERDICT_MODEL,
       isActive: true, // This is key for automated phase
       isPausedForUserInteraction: false, automatedPhaseComplete: false, isSummarizing: false, // Explicitly reset
       currentRound: 0, participantTurnsThisCycle: 0, currentTurnParticipantIndex: 0 // Explicitly reset counters
@@ -485,13 +517,14 @@ async function executeAiTurn( ws: WebSocket, debate: Debate, persona: Persona, i
         let aiResponseContent = '';
         console.log(`[Debate ${debate.id}] Calling ${persona.model} for ${persona.name}. Type: ${callType}. Prompt (first 60): ${finalPrompt.substring(0,60)}...`);
 
-        aiResponseContent = await callModel(ws, persona.model, finalPrompt);
+        const reply = await callModel(ws, persona.model, finalPrompt);
+        aiResponseContent = reply.text;
 
         if (debate.isSummarizing || (!debate.isActive && !debate.isPausedForUserInteraction)) {
             console.log(`[Debate ${debate.id}] AI response for ${persona.name} received, but session state changed. Discarding.`);
             return;
         }
-        addMessageToHistory(debate, createChatMessage(persona.name, aiResponseContent, isRegeneration, false)); // isThinking = false
+        addMessageToHistory(debate, { ...createChatMessage(persona.name, aiResponseContent, isRegeneration, false), model: reply.provider });
         broadcastMessage(ws, debate.history[debate.history.length - 1]);
     } catch (error: any) {
         console.error(`[Debate ${debate.id}] Error for ${persona.name} (${callType}):`, error);
@@ -624,8 +657,8 @@ Your balanced answer to the question, drawing on every perspective and any point
 What remains open.`;
 
   try {
-    const summary = await callModel(ws, AI_GROQ_ID, summaryPrompt);
-    broadcastMessage(ws, createChatMessage('Verdict', summary));
+    const summary = await callModel(ws, debate.verdictModel, summaryPrompt);
+    broadcastMessage(ws, { ...createChatMessage('Verdict', summary.text), model: summary.provider });
   } catch (error: any) {
     sendSystemMessage(ws, debate.id, `Error generating summary: ${error.message}`);
   } finally {

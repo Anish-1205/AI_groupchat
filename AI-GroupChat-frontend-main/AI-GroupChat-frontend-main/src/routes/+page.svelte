@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { fly } from 'svelte/transition';
+	import { fly, fade } from 'svelte/transition';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import Icon from '$lib/Icon.svelte';
@@ -12,7 +12,13 @@
 		timestamp: string;
 		isThinking?: boolean;
 		isRegenerated?: boolean;
+		model?: string; // provider that actually answered
 	}
+
+	// Must mirror PROVIDERS in the backend; the server validates whatever we send.
+	const providerLabels: Record<string, string> = { groq: 'Groq', gemini: 'Gemini', mistral: 'Mistral' };
+	const FALLBACK_ORDER = ['groq', 'gemini', 'mistral'];
+	const MODELS_STORAGE_KEY = 'debate-chamber:models';
 
 	type SessionState = 'idle' | 'automated_debate' | 'user_interaction' | 'summarizing';
 
@@ -70,6 +76,52 @@
 	let selectedPersonaIds: string[] = availablePersonas.filter((p) => p.defaultChecked).map((p) => p.id);
 	let motion = 220; // transition duration; zeroed for prefers-reduced-motion
 
+	// --- Model routing settings ---
+	let settingsOpen = false;
+	let providers: string[] = []; // providers with a key on the server
+	let modelDefaults: Record<string, string> = {};
+	let modelChoice: Record<string, string> = {};
+	let plannedModels: Record<string, string> = {}; // snapshot at debate start, to flag fallbacks in the log
+
+	function loadSavedModels(): Record<string, string> {
+		try {
+			const saved = JSON.parse(localStorage.getItem(MODELS_STORAGE_KEY) ?? '{}');
+			return saved && typeof saved === 'object' ? saved : {};
+		} catch {
+			return {};
+		}
+	}
+
+	function setModel(key: string, model: string) {
+		modelChoice = { ...modelChoice, [key]: model };
+		try {
+			localStorage.setItem(MODELS_STORAGE_KEY, JSON.stringify(modelChoice));
+		} catch {
+			/* storage blocked: choice still applies for this visit */
+		}
+	}
+
+	function resetModels() {
+		modelChoice = { ...modelDefaults };
+		try {
+			localStorage.removeItem(MODELS_STORAGE_KEY);
+		} catch {
+			/* ignore */
+		}
+	}
+
+	// What the server will actually use: the choice if it has a key, else the first configured fallback.
+	// Mirrors providerOrder() in the backend.
+	function resolveModel(key: string, available: string[], choice: Record<string, string>): string | undefined {
+		if (available.includes(choice[key])) return choice[key];
+		return FALLBACK_ORDER.find((p) => available.includes(p));
+	}
+	const effectiveModel = (key: string) => resolveModel(key, providers, modelChoice);
+
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && settingsOpen) settingsOpen = false;
+	}
+
 	function parseMarkdown(markdownText: string): string {
 		if (!markdownText) return '';
 		try {
@@ -100,8 +152,21 @@
 
 		ws.onmessage = async (event) => {
 			try {
-				const message: ChatMessageFromServer = JSON.parse(event.data as string);
+				const data = JSON.parse(event.data as string);
 
+				if (data.type === 'config') {
+					providers = Array.isArray(data.providers) ? data.providers : [];
+					modelDefaults = data.defaults ?? {};
+					const saved = loadSavedModels();
+					// Keep only saved choices for known keys and known providers.
+					const valid = Object.fromEntries(
+						Object.entries(saved).filter(([k, v]) => k in modelDefaults && typeof v === 'string' && v in providerLabels)
+					) as Record<string, string>;
+					modelChoice = { ...modelDefaults, ...valid };
+					return;
+				}
+
+				const message: ChatMessageFromServer = data;
 				if (message.isThinking) {
 					thinkingSpeakers.add(message.speaker);
 				} else {
@@ -163,7 +228,8 @@
 		messages = [];
 		thinkingSpeakers.clear();
 		topic = debateTopicInput.trim();
-		sendMessageToWs('start_debate', { topic, persona_ids: selectedPersonaIds });
+		plannedModels = Object.fromEntries(Object.keys(modelChoice).map((k) => [k, effectiveModel(k) ?? '']));
+		sendMessageToWs('start_debate', { topic, persona_ids: selectedPersonaIds, models: modelChoice });
 	}
 
 	async function handleSendMessage() {
@@ -225,6 +291,20 @@
 	$: canSendMessage = isConnected && isLive;
 	$: turns = messages.filter((m) => personaByName[m.speaker]).length;
 	$: noAiMessagesYet = turns === 0;
+	// Activity log: every model-produced message, newest first, flagged when a fallback answered.
+	$: activity = messages
+		.filter((m) => m.model)
+		.map((m) => {
+			const key = m.speaker === 'Verdict' ? 'verdict' : personaByName[m.speaker]?.id;
+			return { ...m, fellBack: !!key && !!plannedModels[key] && plannedModels[key] !== m.model };
+		})
+		.reverse();
+	const routingRows = [
+		...availablePersonas.map((p) => ({ key: p.id, label: p.name, sub: p.tradition, color: p.color, icon: p.id })),
+		{ key: 'verdict', label: 'Verdict', sub: 'Closing summary', color: '#a1a1aa', icon: 'gavel' }
+	];
+	// Recomputed whenever providers or choices change, so the "uses …" fallback hints stay current.
+	$: routing = (key: string) => resolveModel(key, providers, modelChoice);
 	// Keyed on topic, not messages: the server sends a welcome System message on connect.
 	$: inSetup = currentSessionState === 'idle' && !topic;
 </script>
@@ -245,6 +325,14 @@
 		</div>
 		<div class="topbar-right">
 			<span class="status {statusKind}"><span class="dot"></span>{statusText}</span>
+			<button
+				class="ghost-link settings-btn"
+				on:click={() => (settingsOpen = true)}
+				aria-haspopup="dialog"
+				aria-expanded={settingsOpen}
+			>
+				<Icon name="settings" size={16} /><span class="source-label">Settings</span>
+			</button>
 			<a class="ghost-link" href={REPO_URL} target="_blank" rel="noopener noreferrer">
 				<svg viewBox="0 0 24 24" aria-hidden="true" class="gh"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" /></svg>
 				<span class="source-label">Source</span>
@@ -406,7 +494,7 @@
 								<span class="avatar sm" style="--c:{p.color}" title={p.motto}><Icon name={p.id} size={15} /></span>
 								<span class="agent-text">
 									<span class="agent-name">{p.name} <span class="muted">({p.title})</span></span>
-									<span class="agent-school">{p.tradition}</span>
+									<span class="agent-school">{p.tradition}{#if plannedModels[p.id]}&nbsp;· {providerLabels[plannedModels[p.id]]}{/if}</span>
 								</span>
 								{#if thinkingSpeakers.has(p.name)}<span class="speaking">Speaking</span>{/if}
 							</li>
@@ -446,7 +534,10 @@
 							<article class="verdict" in:fly={{ y: 10, duration: motion * 2 }}>
 								<header>
 									<span class="verdict-title"><Icon name="gavel" size={15} /> Moderator's verdict</span>
-									<span class="muted small">{formatTimestamp(m.timestamp)}</span>
+									<span class="muted small">
+										{#if m.model}<span class="model-tag">via {providerLabels[m.model] ?? m.model}</span>{/if}
+										{formatTimestamp(m.timestamp)}
+									</span>
 								</header>
 								<div class="prose">{@html parseMarkdown(m.content)}</div>
 							</article>
@@ -459,6 +550,7 @@
 										<span class="msg-name">{p ? p.name : 'You'}</span>
 										{#if p}<span class="muted small">{p.title} · {p.tradition}</span>{/if}
 										{#if m.isRegenerated}<span class="tag">Regenerated</span>{/if}
+										{#if m.model}<span class="model-tag">via {providerLabels[m.model] ?? m.model}</span>{/if}
 										<time class="muted small">{formatTimestamp(m.timestamp)}</time>
 									</header>
 									<div class="prose">{@html parseMarkdown(m.content)}</div>
@@ -505,7 +597,100 @@
 			</section>
 		</main>
 	{/if}
+
+	{#if settingsOpen}
+		<!-- Backdrop click closes; keyboard users close with Escape or the close button. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+		<div class="sheet-overlay" transition:fade={{ duration: motion }} on:click={() => (settingsOpen = false)}></div>
+		<div
+			class="sheet"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="settings-title"
+			transition:fly={{ x: 40, duration: motion }}
+		>
+			<header class="sheet-head">
+				<h2 id="settings-title">Settings</h2>
+				<!-- svelte-ignore a11y_autofocus -->
+				<button class="btn ghost icon-sm" on:click={() => (settingsOpen = false)} aria-label="Close settings" autofocus>
+					<Icon name="x" size={16} />
+				</button>
+			</header>
+
+			<div class="sheet-body">
+				<section>
+					<p class="side-label">Providers</p>
+					<ul class="provider-status">
+						{#each Object.keys(providerLabels) as id}
+							<li class:on={providers.includes(id)}>
+								<span class="dot"></span>
+								<span class="provider-name">{providerLabels[id]}</span>
+								<!-- The server only knows a key is present, not that it works; the activity log shows real outcomes. -->
+								<span class="muted small">{providers.includes(id) ? 'API key set' : 'No API key'}</span>
+							</li>
+						{/each}
+					</ul>
+				</section>
+
+				<section>
+					<p class="side-label">Model routing</p>
+					<p class="muted small sheet-note">
+						Choose the model behind each persona. Saved in this browser and applied when the next debate starts. If a
+						model is unavailable, the next connected one answers instead.
+					</p>
+					{#if isLive}<p class="sheet-warn small">A debate is running. Changes apply to the next one.</p>{/if}
+
+					<ul class="routing">
+						{#each routingRows as row (row.key)}
+							{@const eff = routing(row.key)}
+							<li>
+								<span class="avatar sm" style="--c:{row.color}"><Icon name={row.icon} size={15} /></span>
+								<label class="routing-label" for="model-{row.key}">
+									<span class="agent-name">{row.label}</span>
+									<span class="agent-school">
+										{row.sub}{#if eff && eff !== modelChoice[row.key]}<span class="fallback">&nbsp;· uses {providerLabels[eff]}</span>{/if}
+									</span>
+								</label>
+								<select
+									id="model-{row.key}"
+									value={modelChoice[row.key] ?? ''}
+									on:change={(e) => setModel(row.key, e.currentTarget.value)}
+								>
+									{#each Object.keys(providerLabels) as id}
+										<option value={id} disabled={!providers.includes(id)}>
+											{providerLabels[id]}{providers.includes(id) ? '' : ' (no key)'}
+										</option>
+									{/each}
+								</select>
+							</li>
+						{/each}
+					</ul>
+					<button class="btn ghost reset" on:click={resetModels}><Icon name="rotate-ccw" size={14} /> Reset to defaults</button>
+				</section>
+
+				<section>
+					<p class="side-label">Activity log</p>
+					{#if activity.length === 0}
+						<p class="muted small">No model calls yet. Each answer is listed here with the model that produced it.</p>
+					{:else}
+						<ol class="log">
+							{#each activity as a (a.id)}
+								<li>
+									<time>{formatTimestamp(a.timestamp)}</time>
+									<span class="log-who">{a.speaker}</span>
+									<span class="model-tag">{providerLabels[a.model ?? ''] ?? a.model}</span>
+									{#if a.fellBack}<span class="fallback small">fallback</span>{/if}
+								</li>
+							{/each}
+						</ol>
+					{/if}
+				</section>
+			</div>
+		</div>
+	{/if}
 </div>
+
+<svelte:window on:keydown={onKeydown} />
 
 <style>
 	:global(html, body) {
@@ -1115,6 +1300,94 @@
 	}
 	.composer textarea { resize: none; min-height: 40px; }
 	.composer-hint { margin: 8px max(24px, calc((100% - 760px) / 2)) 16px; color: var(--text-3); }
+
+	/* Settings */
+	.settings-btn { background: none; border: none; padding: 0; font: inherit; font-size: 13px; cursor: pointer; }
+	.settings-btn:focus-visible { outline: 2px solid var(--text-2); outline-offset: 4px; border-radius: 4px; }
+	.model-tag {
+		font-size: 11px;
+		padding: 0 6px;
+		border-radius: 4px;
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		color: var(--text-2);
+		white-space: nowrap;
+	}
+	.verdict header .model-tag { margin-right: 6px; }
+	.fallback { color: var(--warn); }
+	.sheet-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); z-index: 40; }
+	.sheet {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: min(420px, 100%);
+		z-index: 41;
+		display: flex;
+		flex-direction: column;
+		background: var(--surface);
+		border-left: 1px solid var(--border);
+		box-shadow: -24px 0 60px -20px rgba(0, 0, 0, 0.7);
+	}
+	.sheet-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		height: 56px;
+		padding: 0 16px 0 24px;
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+	.sheet-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+	.btn.icon-sm { width: 32px; height: 32px; padding: 0; }
+	.sheet-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 32px; }
+	.sheet-note { margin: 0 0 14px; line-height: 1.55; }
+	.sheet-warn {
+		margin: 0 0 14px;
+		padding: 8px 10px;
+		border: 1px solid rgba(245, 158, 11, 0.35);
+		background: rgba(245, 158, 11, 0.08);
+		border-radius: 8px;
+		color: #fcd34d;
+	}
+	.provider-status { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+	.provider-status li {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 13px;
+	}
+	.provider-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+	.provider-status li.on .dot { background: var(--live); box-shadow: 0 0 8px var(--live); }
+	.provider-name { font-weight: 500; }
+	.provider-status .muted { margin-left: auto; }
+	.routing { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+	.routing li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+	.routing li:last-child { border-bottom: none; }
+	.routing-label { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; cursor: pointer; }
+	select {
+		font: inherit;
+		font-size: 13px;
+		color: var(--text);
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 6px 10px;
+		min-width: 120px;
+		cursor: pointer;
+	}
+	select:hover { border-color: var(--border-strong); }
+	select:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+	option { background: var(--surface); }
+	option:disabled { color: var(--text-3); }
+	.btn.reset { margin-top: 10px; }
+	.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+	.log li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+	.log time { color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 60px; }
+	.log-who { flex: 1; color: var(--text); }
 
 	@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 	@keyframes spin { to { --angle: 360deg; } }
