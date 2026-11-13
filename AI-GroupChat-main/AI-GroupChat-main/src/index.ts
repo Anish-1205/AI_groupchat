@@ -64,10 +64,39 @@ const ALL_PERSONAS: Record<string, Persona> = {
   [MODERATOR_PERSONA_ID]: { id: MODERATOR_PERSONA_ID, name: 'mod', model: AI_MISTRAL_ID, instructions: "Moderator instructions..." }
 };
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
+
+// Rate limit: caps paid LLM calls per client IP (rolling hour) and globally (per day).
+// shortcut: in-memory, resets on restart and isn't shared across instances; use Redis if scaled out.
+const MAX_CALLS_PER_IP_HOUR = Number(process.env.MAX_CALLS_PER_IP_HOUR) || 30;
+const MAX_CALLS_PER_DAY = Number(process.env.MAX_CALLS_PER_DAY) || 500;
+const ipCalls = new Map<string, number[]>();
+const clientIp = new WeakMap<WebSocket, string>();
+let dayStart = Date.now();
+let dayCalls = 0;
+
+function takeCallBudget(ws: WebSocket): void {
+  const now = Date.now();
+  if (now - dayStart > 86_400_000) { dayStart = now; dayCalls = 0; }
+  const ip = clientIp.get(ws) ?? 'unknown';
+  const recent = (ipCalls.get(ip) ?? []).filter(t => now - t < 3_600_000);
+  if (recent.length >= MAX_CALLS_PER_IP_HOUR) throw new Error('Rate limit reached for your connection. Please try again in an hour.');
+  if (dayCalls >= MAX_CALLS_PER_DAY) throw new Error('Daily demo quota reached. Please try again tomorrow.');
+  recent.push(now);
+  ipCalls.set(ip, recent);
+  dayCalls++;
+}
+
+// Single entry point for LLM calls: enforces the rate limit and falls back to Gemini when no Mistral key is set.
+async function callModel(ws: WebSocket, model: string, prompt: string): Promise<string> {
+  takeCallBudget(ws);
+  if (model === AI_MISTRAL_ID && process.env.MISTRAL_API_KEY) return fetchMistral(prompt);
+  return fetchGemini(prompt);
+}
 const activeDebates = new Map<WebSocket, Debate>();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  clientIp.set(ws, String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress).split(',')[0].trim());
   console.log('Client connected');
   activeDebates.set(ws, createNewDebateState());
 
@@ -416,9 +445,7 @@ async function executeAiTurn( ws: WebSocket, debate: Debate, persona: Persona, i
         let aiResponseContent = '';
         console.log(`[Debate ${debate.id}] Calling ${persona.model} for ${persona.name}. Type: ${callType}. Prompt (first 60): ${finalPrompt.substring(0,60)}...`);
 
-        if (persona.model === AI_MISTRAL_ID) aiResponseContent = await fetchMistral(finalPrompt);
-        else if (persona.model === AI_GEMINI_ID) aiResponseContent = await fetchGemini(finalPrompt);
-        else throw new Error(`Unknown AI model: ${persona.model}`);
+        aiResponseContent = await callModel(ws, persona.model, finalPrompt);
 
         if (debate.isSummarizing || (!debate.isActive && !debate.isPausedForUserInteraction)) {
             console.log(`[Debate ${debate.id}] AI response for ${persona.name} received, but session state changed. Discarding.`);
@@ -555,7 +582,7 @@ TASK: Neutral summarizer. Provide a concise summary (~5-8 sentences). Include:
 Output: Clear, balanced, practical plain text.`;
 
   try {
-    const summary = await fetchMistral(summaryPrompt);
+    const summary = await callModel(ws, AI_MISTRAL_ID, summaryPrompt);
     broadcastMessage(ws, createChatMessage('System', `Final Summary:\n${summary}`));
   } catch (error: any) {
     sendSystemMessage(ws, debate.id, `Error generating summary: ${error.message}`);
