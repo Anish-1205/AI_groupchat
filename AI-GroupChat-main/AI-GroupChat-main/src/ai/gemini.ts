@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv';
 dotenv.config(); // Ensure environment variables are loaded
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
 const GEMINI_MODEL_NAME = process.env.GEMINI_MODEL || "gemini-flash-latest"; // Or "gemini-pro" etc.
 
 let genAI: GoogleGenerativeAI | null = null;
@@ -89,7 +90,23 @@ export async function fetchGemini(prompt: string): Promise<string> {
 
         console.log(`[Gemini AI] Sending request. Model: ${GEMINI_MODEL_NAME}. Full prompt (first 150 chars): ${fullUserPrompt.substring(0,150)}...`);
 
-        const result = await chat.sendMessage(fullUserPrompt); // Send the combined prompt
+        // Retry transient overload (503/429); last attempt uses a lighter fallback model. Timeout so the UI never spins forever.
+        const delays = [2000, 5000, 0];
+        let result;
+        for (let i = 0; i < delays.length; i++) {
+            const name = i === delays.length - 1 ? GEMINI_FALLBACK_MODEL : GEMINI_MODEL_NAME;
+            const m = genAI.getGenerativeModel({ model: name, safetySettings }, { timeout: 30000 });
+            try {
+                result = await m.startChat({ history: [] }).sendMessage(fullUserPrompt);
+                break;
+            } catch (e: any) {
+                const transient = /(503|429)|timeout|timed out|fetch failed/i.test(String(e?.message));
+                if (!transient || i === delays.length - 1) throw e;
+                console.warn(`[Gemini AI] transient error (attempt ${i + 1}), retrying: ${e.message}`);
+                await new Promise(r => setTimeout(r, delays[i]));
+            }
+        }
+        if (!result) throw new Error('Gemini returned no result');
         const response = result.response;
         const text = response.text();
         
