@@ -51,10 +51,23 @@
         return escapedText.replace(/\n/g, '<br>');
     }
 }
+	// `name` must match the persona name in the backend's ALL_PERSONAS (it's the message speaker).
 	const availablePersonas = [
-		{ id: 'nilm_expert', name: 'NILM Expert (Mistral)', defaultChecked: true },
-		{ id: 'data_scientist', name: 'Data Scientist (Gemini)', defaultChecked: true },
-		{ id: 'moderator', name: 'Debate Moderator (Mistral)', defaultChecked: true }
+		// `title` is a plain-word label; `tradition` is the school of thought it maps to.
+		{ id: 'stoic', name: 'Zeno', title: 'Calm', tradition: 'Stoic', icon: '🛡️', color: '#7dcfff', defaultChecked: true },
+		{ id: 'existentialist', name: 'Simone', title: 'Free Spirit', tradition: 'Existentialist', icon: '🔥', color: '#ff9e64', defaultChecked: true },
+		{ id: 'buddhist', name: 'Ananda', title: 'Mindful', tradition: 'Buddhist', icon: '☸️', color: '#e0af68', defaultChecked: true },
+		{ id: 'pragmatist', name: 'Dewey', title: 'Practical', tradition: 'Pragmatist', icon: '🧭', color: '#73daca', defaultChecked: false },
+		{ id: 'rationalist', name: 'Baruch', title: 'Rational', tradition: 'Rationalist', icon: '📐', color: '#7aa2f7', defaultChecked: false },
+		{ id: 'absurdist', name: 'Sisyphus', title: 'Rebel', tradition: 'Absurdist', icon: '🪨', color: '#f7768e', defaultChecked: false },
+		{ id: 'moderator', name: 'Arbiter', title: 'Neutral', tradition: 'Debate host', icon: '🎙️', color: '#bb9af7', defaultChecked: true }
+	];
+	const personaByName = Object.fromEntries(availablePersonas.map((p) => [p.name, p]));
+	const exampleQuestions = [
+		'Is happiness the point of life?',
+		'Can a machine ever have a mind?',
+		'Do we owe anything to future generations?',
+		'Is suffering necessary?'
 	];
 	let selectedPersonaIds: string[] = availablePersonas
 		.filter((p) => p.defaultChecked)
@@ -220,10 +233,18 @@
 	function getSpeakerClass(speaker: string) {
 		if (speaker === 'User') return 'user';
 		if (speaker === 'System') return 'system';
-		if (speaker.toLowerCase().includes('mistral')) return 'mistral';
-		if (speaker.toLowerCase().includes('gemini')) return 'gemini';
-		if (speaker.toLowerCase().includes('moderator')) return 'moderator';
+		if (speaker === 'Verdict') return 'synthesis';
 		return 'other-ai';
+	}
+
+	function speakerLabel(speaker: string) {
+		const p = personaByName[speaker];
+		return p ? `${p.icon} ${p.name} (${p.title})` :speaker === 'Verdict' ? '🔨 The Arbiter’s Verdict' : speaker;
+	}
+
+	function speakerStyle(speaker: string) {
+		const p = personaByName[speaker];
+		return p ? `border-left: 4px solid ${p.color}` : '';
 	}
 
 	function formatTimestamp(isoTimestamp: string) {
@@ -254,7 +275,7 @@
 <div class="chat-modal-overlay">
 	<div class="chat-modal-container">
 		<header class="chat-modal-header">
-			<h2>AI Debate Chamber</h2>
+			<h2>🦉 The Agora</h2>
 			<span class="status-indicator {statusClass}">{statusText}</span>
 		</header>
 
@@ -265,19 +286,24 @@
 		<!-- Show setup only if truly idle and no messages, or explicitly reset to this state -->
 		{#if currentSessionState === 'idle' && messages.length === 0}
 			<div class="debate-setup">
-				<h3>Start a New Debate</h3>
+				<h3>Bring a question to the Agora</h3>
 				<textarea
 					bind:value={debateTopicInput}
-					placeholder="Enter the debate topic or problem statement..."
+					placeholder="What should the thinkers argue about?"
 					rows="3"
 					aria-label="Debate topic input"
 				/>
+				<div class="example-questions">
+					{#each exampleQuestions as q}
+						<button type="button" class="example-chip" on:click={() => (debateTopicInput = q)}>{q}</button>
+					{/each}
+				</div>
 				<div class="persona-selection">
-					<h4>Select Participating Personas:</h4>
+					<h4>Who takes the floor?</h4>
 					{#each availablePersonas as persona (persona.id)}
-						<label>
+						<label style="border-left: 4px solid {persona.color}">
 							<input type="checkbox" bind:group={selectedPersonaIds} value={persona.id} />
-							{persona.name}
+							{persona.icon} <strong>{persona.name} ({persona.title})</strong>&nbsp;<span class="tradition">· {persona.tradition}</span>
 						</label>
 					{/each}
 				</div>
@@ -305,7 +331,7 @@
 		<!-- Prompt for user during Q&A phase -->
 		{#if currentSessionState === 'user_interaction'}
 			<div class="system-prompt-for-user">
-				Automated debate paused. Ask questions (e.g., "@NILM Expert: ...") or type <strong>/end</strong> to summarize.
+				The floor is open. Question a thinker directly (e.g., "@Zeno: ...") or type <strong>/end</strong> for the Arbiter's verdict.
 			</div>
 		{/if}
 
@@ -313,9 +339,9 @@
 		<div class="chat-messages" bind:this={chatContainer} aria-live="polite">
 			{#each messages as message (message.id)}
 				<div class="message-wrapper {getSpeakerClass(message.speaker)}">
-					<div class="message-bubble">
+					<div class="message-bubble" style={speakerStyle(message.speaker)}>
 						{#if message.speaker !== 'System'}
-							<div class="speaker-name">{message.speaker}</div>
+							<div class="speaker-name">{speakerLabel(message.speaker)}</div>
 						{/if}
 						<div class="message-content">
 							{#if message.isRegenerated}
@@ -331,8 +357,8 @@
 			{/each}
 			{#each Array.from(thinkingSpeakers) as speakerName (speakerName)}
 				 <div class="message-wrapper {getSpeakerClass(speakerName)}">
-					<div class="message-bubble is-thinking">
-						<div class="speaker-name">{speakerName}</div>
+					<div class="message-bubble is-thinking" style={speakerStyle(speakerName)}>
+						<div class="speaker-name">{speakerLabel(speakerName)}</div>
 						<div class="message-content">
 							<div class="typing-indicator">
 								<span></span><span></span><span></span>
@@ -349,7 +375,7 @@
 				<textarea
 					bind:value={userInput}
 					on:keydown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-					placeholder={currentSessionState === 'user_interaction' ? "Ask a question (e.g. @NILM Expert: ...) or type /end" : "Type your interjection..."}
+					placeholder={currentSessionState === 'user_interaction' ? "Ask a question (e.g. @Zeno: ...) or type /end" : "Type your interjection..."}
 					rows="2"
 					disabled={!canSendMessage}
 					aria-label="User input message"
@@ -637,6 +663,31 @@
 		background-color: var(--other-ai-bubble-bg);
 		color: var(--other-ai-bubble-text);
 	}
+	.message-wrapper.synthesis {
+		max-width: 100%;
+	}
+	.message-wrapper.synthesis .message-bubble {
+		background-color: var(--panel-bg);
+		color: var(--fg-color);
+		border-top: 3px solid var(--purple);
+		border-radius: 4px;
+		padding: 16px 22px;
+	}
+	.message-wrapper.synthesis .speaker-name { color: var(--purple); font-size: 1em; opacity: 1; letter-spacing: 0.04em; text-transform: uppercase; }
+	.message-wrapper.synthesis :global(h2) { color: var(--cyan); font-size: 1em; margin: 14px 0 6px; }
+	.example-questions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+	.example-chip {
+		background: var(--panel-bg);
+		color: var(--cyan);
+		border: 1px solid var(--border-color);
+		border-radius: 4px;
+		padding: 4px 10px;
+		font-size: var(--font-size-small);
+		cursor: pointer;
+	}
+	.example-chip:hover { border-color: var(--cyan); }
+	.persona-selection label { padding-left: 10px; }
+	.persona-selection .tradition { color: var(--comment-color); }
 
 
 	.speaker-name {

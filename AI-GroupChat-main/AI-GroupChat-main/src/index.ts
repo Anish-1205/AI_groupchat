@@ -58,11 +58,26 @@ interface Debate {
   automatedPhaseComplete: boolean;
 }
 
+const STYLE_RULE = 'Stay in character, engage directly with what others said (agree, challenge, or build on it), and keep responses under 150 words.';
+
+// Philosopher personas. Names are single words so users can @mention them.
 const ALL_PERSONAS: Record<string, Persona> = {
-  nilm_expert: { id: 'nilm_expert', name: 'mistral', model: AI_MISTRAL_ID, instructions: "NILM Expert instructions...", expertise: 'NILM expertise' },
-  data_scientist: { id: 'data_scientist', name: 'gemini', model: AI_GEMINI_ID, instructions: "Data Scientist instructions...", expertise: 'Data science expertise' },
-  [MODERATOR_PERSONA_ID]: { id: MODERATOR_PERSONA_ID, name: 'mod', model: AI_MISTRAL_ID, instructions: "Moderator instructions..." }
+  stoic: { id: 'stoic', name: 'Zeno', model: AI_MISTRAL_ID, expertise: 'Stoicism (Zeno, Epictetus, Seneca)',
+    instructions: `You are Zeno, a Stoic philosopher. Core beliefs: virtue is the only true good; only our judgments and responses are in our control; live according to nature and reason; hardship and death are natural. Style: calm, measured, logical; use the dichotomy of control; challenge anyone who places value in externals. ${STYLE_RULE}` },
+  existentialist: { id: 'existentialist', name: 'Simone', model: AI_GEMINI_ID, expertise: 'Existentialism (de Beauvoir, Sartre, Kierkegaard)',
+    instructions: `You are Simone, an Existentialist philosopher. Core beliefs: existence precedes essence; we are condemned to be free; authenticity means facing anxiety and choosing; bad faith is self-deception; life has no given meaning, we create it. Style: passionate, provocative; challenge fixed ideas of human nature; push others to own their freedom. ${STYLE_RULE}` },
+  buddhist: { id: 'buddhist', name: 'Ananda', model: AI_MISTRAL_ID, expertise: 'Buddhism (Theravada and Mahayana)',
+    instructions: `You are Ananda, a Buddhist philosopher. Core beliefs: the Four Noble Truths; impermanence; non-self; interdependence; craving and attachment cause suffering; compassion and mindfulness. Style: gentle yet incisive; use parables and nature analogies; question the assumptions behind the question; point to the middle way. ${STYLE_RULE}` },
+  pragmatist: { id: 'pragmatist', name: 'Dewey', model: AI_GEMINI_ID, expertise: 'Pragmatism (Dewey, James, Peirce)',
+    instructions: `You are Dewey, a Pragmatist philosopher. Core beliefs: truth is what works; ideas are tools judged by consequences; experience comes before theory; approach problems experimentally; pluralism. Style: down-to-earth and direct; keep asking "what difference does it make in practice?"; skeptical of purely abstract arguments. ${STYLE_RULE}` },
+  rationalist: { id: 'rationalist', name: 'Baruch', model: AI_MISTRAL_ID, expertise: 'Rationalism (Spinoza, Descartes, Leibniz)',
+    instructions: `You are Baruch, a Rationalist philosopher. Core beliefs: reason is the primary source of knowledge; some truths are known a priori; clear and distinct ideas ground certainty; the universe follows rational, discoverable principles. Style: rigorous, systematic; build from first principles; demand clear definitions and logical consistency. ${STYLE_RULE}` },
+  absurdist: { id: 'absurdist', name: 'Sisyphus', model: AI_GEMINI_ID, expertise: 'Absurdism (Camus)',
+    instructions: `You are Sisyphus, an Absurdist philosopher who has made peace with the boulder. Core beliefs: the absurd is the clash between our hunger for meaning and the universe's silence; reject both despair and the leap of faith; imagine Sisyphus happy; respond with revolt, freedom and passion. Style: ironic yet earnest; vivid metaphors; dark humor; challenge both nihilism and false hope. ${STYLE_RULE}` },
+  [MODERATOR_PERSONA_ID]: { id: MODERATOR_PERSONA_ID, name: 'Arbiter', model: AI_MISTRAL_ID,
+    instructions: 'You are the Arbiter, the neutral host of a philosophical debate. You do not take sides. You keep the discussion focused on the question, point out where speakers talk past each other, name emerging agreements and tensions, and pose one sharp follow-up question to a specific speaker. Keep it under 100 words.' }
 };
+const DEFAULT_PERSONA_IDS = ['stoic', 'existentialist', 'buddhist', MODERATOR_PERSONA_ID];
 
 const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
 
@@ -133,7 +148,7 @@ wss.on('connection', (ws, req) => {
           }
           const personaIds = Array.isArray(payload.persona_ids) && payload.persona_ids.every((id: any) => typeof id === 'string')
             ? payload.persona_ids
-            : [ALL_PERSONAS.nilm_expert.id, ALL_PERSONAS.data_scientist.id];
+            : DEFAULT_PERSONA_IDS;
           await startDebate(ws, debate, payload.topic, personaIds);
         } else {
           sendSystemMessage(ws, debate.id, 'Error: "topic" (string) required.');
@@ -421,7 +436,7 @@ async function transitionToUserInteractionPhase(ws: WebSocket, debate: Debate) {
     debate.automatedPhaseComplete = true;
     debate.isPausedForUserInteraction = true;
     // debate.isActive remains true for the session
-    sendSystemMessage(ws, debate.id, "Automated debate phase complete. You can now ask questions to the AIs (e.g., '@mod/gemini/mistral: your question') or make general comments. Type '/end' in the chat to summarize and conclude the session.");
+    sendSystemMessage(ws, debate.id, `Automated debate phase complete. You can now ask questions to the speakers (e.g., '@${debate.participants[0]?.name ?? 'Arbiter'}: your question') or make general comments. Type '/end' in the chat to summarize and conclude the session.`);
 }
 
 async function executeAiTurn( ws: WebSocket, debate: Debate, persona: Persona, isRegeneration: boolean = false, customPrompt?: string) {
@@ -515,7 +530,7 @@ function buildPromptForGeneralUserComment(debate: Debate, persona: Persona, user
     prompt += debate.history.slice(-7).map(msg => `${msg.speaker}: ${msg.content.substring(0,200)}${msg.content.length > 200 ? '...' : ''}`).join('\n') + "\n\n---\n";
     prompt += `The User has made a general comment/asked a question to the group:\nUSER: "${userComment}"\n\n`;
     if (isInitialResponderToUser && persona.id === MODERATOR_PERSONA_ID) {
-        prompt += `YOUR TASK, ${persona.name}: Acknowledge the user's comment. Briefly summarize its key point. Then, if appropriate, direct specific follow-up questions based on the user's comment AND the prior debate context to the NILM Expert and Data Scientist to continue the discussion. Be concise. Formulate clear questions for the experts if you direct them.`;
+        prompt += `YOUR TASK, ${persona.name}: Acknowledge the user's comment. Briefly summarize its key point. Then, if appropriate, direct specific follow-up questions based on the user's comment AND the prior debate context to ${debate.participants.map(p => p.name).join(', ')} to continue the discussion. Be concise. Formulate clear questions for the experts if you direct them.`;
     } else {
         prompt += `YOUR TASK, ${persona.name}: Provide your perspective on the User's input. Address it thoughtfully based on your expertise and the prior discussion. Be concise.`;
     }
@@ -572,18 +587,20 @@ Participants: ${debate.participants.map(p => p.name).join(', ')}${debate.moderat
 HISTORY:
 ${fullHistoryText}
 ---
-TASK: Neutral summarizer. Provide a concise summary (~5-8 sentences). Include:
-1. Core problem/topic.
-2. Key arguments from automated debate.
-3. Significant points/clarifications from user Q&A.
-4. Agreements/disagreements.
-5. Emerged solutions/understandings.
-6. Unresolved questions.
-Output: Clear, balanced, practical plain text.`;
+TASK: You are the Arbiter delivering a closing verdict (300-450 words) on this debate for an educated general reader.
+Use exactly these markdown headings, each followed by 1-2 paragraphs:
+## Where They Agree
+Shared ground the different traditions reached from different starting points.
+## Where They Clash
+The real disagreements, and why they matter in practice.
+## The Verdict
+Your balanced answer to the question, drawing on every perspective and any points the user raised in Q&A.
+## Still Unresolved
+What remains open.`;
 
   try {
     const summary = await callModel(ws, AI_MISTRAL_ID, summaryPrompt);
-    broadcastMessage(ws, createChatMessage('System', `Final Summary:\n${summary}`));
+    broadcastMessage(ws, createChatMessage('Verdict', summary));
   } catch (error: any) {
     sendSystemMessage(ws, debate.id, `Error generating summary: ${error.message}`);
   } finally {
