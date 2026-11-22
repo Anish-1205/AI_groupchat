@@ -1,3 +1,5 @@
+> **Current setup and configuration are in the [root README](../../README.md).** The notes below are from the original server project and may be out of date.
+
 
 ## Setup and Installation ⚙️
 
